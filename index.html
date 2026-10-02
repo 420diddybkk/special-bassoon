@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bangkok ParkLive — 100 Locations</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        success: '#00B42A',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        dark: '#1D2129',
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+        .pulse-dot { animation: pulse 2s infinite; }
+        #map { height: 550px; border-radius: 0.75rem; }
+        .custom-marker {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            font-size: 11px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            border: 2px solid white;
+        }
+        .filter-btn.active {
+            background-color: #165DFF;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-dark">
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i class="fa fa-map-marker text-primary text-2xl"></i>
+                <h1 class="text-xl font-bold text-primary">Bangkok ParkLive <span class="text-sm font-normal text-gray-500">100 Locations</span></h1>
+            </div>
+            <div class="flex items-center gap-2 text-sm font-medium">
+                <span class="w-2 h-2 bg-success rounded-full pulse-dot"></span>
+                <span class="text-gray-600">Live</span>
+                <span class="text-gray-400 mx-1">|</span>
+                <span id="lastUpdated" class="text-gray-500">--:--</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+            <div class="flex flex-col md:flex-row gap-3 mb-4">
+                <input type="text" id="searchInput" placeholder="Search name, area, landmark..." 
+                    class="flex-1 border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50">
+                <button id="refreshBtn" class="bg-primary text-white px-5 py-3 rounded-lg font-medium hover:bg-primary/90 whitespace-nowrap">
+                    <i class="fa fa-refresh mr-1"></i> Refresh
+                </button>
+            </div>
+
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button class="filter-btn active px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="all">
+                    <i class="fa fa-th-large mr-1"></i> All
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="Mall">
+                    <i class="fa fa-shopping-bag mr-1"></i> Malls
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="Hospital">
+                    <i class="fa fa-heartbeat mr-1"></i> Hospitals
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="Airport">
+                    <i class="fa fa-plane mr-1"></i> Airports
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="Transit">
+                    <i class="fa fa-train mr-1"></i> Transit
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="CBD">
+                    <i class="fa fa-building mr-1"></i> Business
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="Public">
+                    <i class="fa fa-tree mr-1"></i> Public
+                </button>
+                <button class="filter-btn px-3 py-2 rounded-lg border text-sm font-medium transition" data-filter="Tourist">
+                    <i class="fa fa-camera mr-1"></i> Tourist
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="bg-success/10 rounded-lg p-3">
+                    <p class="text-xs text-gray-500">Available Spots</p>
+                    <p id="totalAvailable" class="text-xl font-bold text-success">0</p>
+                </div>
+                <div class="bg-danger/10 rounded-lg p-3">
+                    <p class="text-xs text-gray-500">Occupied</p>
+                    <p id="totalOccupied" class="text-xl font-bold text-danger">0</p>
+                </div>
+                <div class="bg-primary/10 rounded-lg p-3">
+                    <p class="text-xs text-gray-500">Total Capacity</p>
+                    <p id="totalSpaces" class="text-xl font-bold text-primary">0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex mb-4 border-b">
+            <button class="tab-btn active px-4 py-2 font-medium text-primary border-b-2 border-primary" data-view="map">
+                <i class="fa fa-map-o mr-1"></i> Map
+            </button>
+            <button class="tab-btn px-4 py-2 font-medium text-gray-500" data-view="list">
+                <i class="fa fa-list mr-1"></i> List
+            </button>
+        </div>
+
+        <div id="mapView" class="tab-content">
+            <div id="map" class="shadow-sm"></div>
+        </div>
+
+        <div id="listView" class="tab-content hidden">
+            <div id="parkingList" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"></div>
+        </div>
+    </main>
+
+    <script>
+        const parkingData = [
+            {id:1,name:"Siam Square Garage",address:"Pathum Wan, Rama I Rd",avail:42,total:150,lat:13.7456,lng:100.5341,type:"Mall",fee:"฿50/hr"},
+            {id:2,name:"MBK Center",address:"Phayathai Rd, Wang Mai",avail:18,total:200,lat:13.7459,lng:100.5322,type:"Mall",fee:"฿40/hr"},
+            {id:3,name:"Iconsiam",address:"Charoen Nakhon Rd, Khlong San",avail:215,total:800,lat:13.7245,lng:100.5108,type:"Mall",fee:"Free 3hrs / ฿30/hr"},
+            {id:4,name:"Terminal 21 Asoke",address:"Sukhumvit 21, Khlong Toei Nua",avail:12,total:350,lat:13.7364,lng:100.5593,type:"Mall",fee:"฿40/hr"},
+            {id:5,name:"CentralWorld",address:"Rama I Rd, Pathum Wan",avail:28,total:700,lat:13.7467,lng:100.5367,type:"Mall",fee:"฿50/hr"},
+            {id:6,name:"EmQuartier/EmSphere",address:"Sukhumvit Rd, Khlong Tan",avail:143,total:650,lat:13.7320,lng:100.5634,type:"Mall",fee:"฿50/hr"},
+            {id:7,name:"Central Rama 9",address:"Rama IX Rd, Huai Khwang",avail:156,total:900,lat:13.7550,lng:100.5730,type:"Mall",fee:"฿40/hr"},
+            {id:8,name:"Esplanade Ratchada",address:"Ratchadaphisek Rd, Din Daeng",avail:48,total:450,lat:13.7640,lng:100.5600,type:"Mall",fee:"฿35/hr"},
+            {id:9,name:"Union Mall",address:"Ratchadaphisek, Lat Yao",avail:92,total:600,lat:13.7950,lng:100.5520,type:"Mall",fee:"฿25/hr"},
+            {id:10,name:"Siam Paragon",address:"Rama I Rd, Pathum Wan",avail:34,total:400,lat:13.7460,lng:100.5350,type:"Mall",fee:"฿60/hr"},
+            {id:11,name:"Siam Discovery",address:"Rama I Rd, Pathum Wan",avail:67,total:250,lat:13.7450,lng:100.5330,type:"Mall",fee:"฿50/hr"},
+            {id:12,name:"Future Park Rangsit",address:"Phahonyothin, Rangsit",avail:420,total:2500,lat:13.8650,lng:100.5900,type:"Mall",fee:"฿30/hr"},
+            {id:13,name:"Central Ladprao",address:"Phahonyothin Rd, Chatuchak",avail:189,total:1100,lat:13.8100,lng:100.5550,type:"Mall",fee:"฿35/hr"},
+            {id:14,name:"Central Pinklao",address:"Borommaratchachonnani Rd",avail:134,total:850,lat:13.7650,lng:100.4850,type:"Mall",fee:"฿35/hr"},
+            {id:15,name:"Central Chaeng Watthana",address:"Chaeng Watthana Rd",avail:278,total:1600,lat:13.8900,lng:100.5400,type:"Mall",fee:"฿30/hr"},
+            {id:16,name:"Central Bangna",address:"Bang Na-Trat Rd",avail:245,total:1400,lat:13.6700,lng:100.6400,type:"Mall",fee:"฿30/hr"},
+            {id:17,name:"Central Ramindra",address:"Ram Intra Rd, Khan Na Yao",avail:156,total:950,lat:13.8300,lng:100.6000,type:"Mall",fee:"฿30/hr"},
+            {id:18,name:"Seacon Square",address:"Srinakharin Rd, Prawet",avail:210,total:1800,lat:13.7150,lng:100.6300,type:"Mall",fee:"฿25/hr"},
+            {id:19,name:"Paradise Park",address:"Srinakharin Rd, Nong Bon",avail:145,total:900,lat:13.6850,lng:100.6500,type:"Mall",fee:"฿25/hr"},
+            {id:20,name:"The Mall Bangkapi",address:"Lat Phrao Rd, Bang Kapi",avail:198,total:1200,lat:13.7600,lng:100.6400,type:"Mall",fee:"฿30/hr"},
+            {id:21,name:"The Mall Ngamwongwan",address:"Ngamwongwan Rd, Nonthaburi",avail:167,total:1000,lat:13.8400,lng:100.5300,type:"Mall",fee:"฿30/hr"},
+            {id:22,name:"Big C Rajdamri",address:"Rajdamri Rd, Pathum Wan",avail:56,total:350,lat:13.7470,lng:100.5400,type:"Mall",fee:"฿30/hr"},
+            {id:23,name:"Tesco Lotus Rama 4",address:"Rama IV Rd, Khlong Toei",avail:112,total:650,lat:13.7250,lng:100.5500,type:"Mall",fee:"฿25/hr"},
+            {id:24,name:"Robinson Bangrak",address:"Charoen Krung Rd, Bangrak",avail:43,total:280,lat:13.7200,lng:100.5150,type:"Mall",fee:"฿35/hr"},
+            {id:25,name:"Gaysorn Village",address:"Rama I Rd, Pathum Wan",avail:24,total:180,lat:13.7470,lng:100.5380,type:"Mall",fee:"฿60/hr"},
+            {id:26,name:"Amarin Plaza",address:"Ploenchit Rd, Pathum Wan",avail:58,total:320,lat:13.7450,lng:100.5420,type:"Mall",fee:"฿45/hr"},
+            {id:27,name:"Platinum Fashion Mall",address:"Phetchaburi Rd, Ratchathewi",avail:32,total:400,lat:13.7500,lng:100.5380,type:"Mall",fee:"฿35/hr"},
+            {id:28,name:"Pantip Plaza",address:"Phetchaburi Rd, Ratchathewi",avail:45,total:300,lat:13.7520,lng:100.5350,type:"Mall",fee:"฿35/hr"},
+            {id:29,name:"Fortune Town IT",address:"Ratchadaphisek Rd, Huai Khwang",avail:89,total:550,lat:13.7580,lng:100.5700,type:"Mall",fee:"฿30/hr"},
+            {id:30,name:"Jusco Srinakharin",address:"Srinakharin Rd",avail:76,total:450,lat:13.7000,lng:100.6200,type:"Mall",fee:"฿25/hr"},
+            {id:31,name:"Bangkok Hospital Main",address:"Phetchaburi Rd, Huai Khwang",avail:210,total:550,lat:13.7500,lng:100.5650,type:"Hospital",fee:"฿30/hr"},
+            {id:32,name:"Siriraj Hospital",address:"Arun Amarin Rd, Bangkok Noi",avail:135,total:800,lat:13.7570,lng:100.4850,type:"Hospital",fee:"฿25/hr"},
+            {id:33,name:"Ramathibodi Hospital",address:"Rama VI Rd, Phaya Thai",avail:88,total:400,lat:13.7680,lng:100.5230,type:"Hospital",fee:"฿25/hr"},
+            {id:34,name:"Bumrungrad International",address:"Sukhumvit 3, Khlong Toei",avail:67,total:350,lat:13.7430,lng:100.5550,type:"Hospital",fee:"฿50/hr"},
+            {id:35,name:"Samitivej Sukhumvit",address:"Sukhumvit 49, Khlong Tan Nua",avail:95,total:420,lat:13.7300,lng:100.5800,type:"Hospital",fee:"฿45/hr"},
+            {id:36,name:"Phyathai 1 Hospital",address:"Si Ayutthaya Rd, Ratchathewi",avail:54,total:280,lat:13.7600,lng:100.5250,type:"Hospital",fee:"฿35/hr"},
+            {id:37,name:"Phyathai 2 Hospital",address:"Phahonyothin Rd, Phaya Thai",avail:62,total:320,lat:13.7800,lng:100.5400,type:"Hospital",fee:"฿35/hr"},
+            {id:38,name:"Phyathai 3 Hospital",address:"Borommaratchachonnani Rd, Taling Chan",avail:48,total:250,lat:13.7700,lng:100.4700,type:"Hospital",fee:"฿35/hr"},
+            {id:39,name:"Vajira Hospital",address:"Samsen Rd, Dusit",avail:76,total:380,lat:13.7750,lng:100.5050,type:"Hospital",fee:"฿20/hr"},
+            {id:40,name:"Rajavithi Hospital",address:"Phaya Thai Rd, Ratchathewi",avail:92,total:450,lat:13.7650,lng:100.5200,type:"Hospital",fee:"฿20/hr"},
+            {id:41,name:"Lerdsin Hospital",address:"Lerdsin Rd, Bangrak",avail:43,total:220,lat:13.7280,lng:100.5150,type:"Hospital",fee:"฿20/hr"},
+            {id:42,name:"Chulalongkorn Hospital",address:"Rama IV Rd, Pathum Wan",avail:105,total:500,lat:13.7350,lng:100.5350,type:"Hospital",fee:"฿25/hr"},
+            {id:43,name:"King Chulalongkorn Memorial",address:"Henri Dunant Rd, Pathum Wan",avail:78,total:400,lat:13.7380,lng:100.5330,type:"Hospital",fee:"฿25/hr"},
+            {id:44,name:"Pramongkutklao Hospital",address:"Rajavithi Rd, Phaya Thai",avail:65,total:340,lat:13.7700,lng:100.5150,type:"Hospital",fee:"฿20/hr"},
+            {id:45,name:"Yanhee Hospital",address:"Charan Sanitwong Rd, Bang Phlat",avail:52,total:260,lat:13.7800,lng:100.5000,type:"Hospital",fee:"฿30/hr"},
+            {id:46,name:"Suvarnabhumi Terminal",address:"Samut Prakan",avail:1250,total:5000,lat:13.6900,lng:100.7500,type:"Airport",fee:"฿50/hr"},
+            {id:47,name:"Don Mueang Public",address:"Vibhavadi Rangsit",avail:312,total:1200,lat:13.9028,lng:100.6008,type:"Airport",fee:"฿50/hr"},
+            {id:48,name:"Hua Lamphong Station",address:"Rama IV Rd, Pom Prap",avail:56,total:220,lat:13.7376,lng:100.5178,type:"Transit",fee:"฿25/hr"},
+            {id:49,name:"BTS Mo Chit Lot",address:"Phahonyothin Rd, Chatuchak",avail:175,total:350,lat:13.7980,lng:100.5540,type:"Transit",fee:"฿20 flat"},
+            {id:50,name:"BTS On Nut Deck",address:"Sukhumvit 77, Phra Khanong",avail:110,total:280,lat:13.7150,lng:100.5850,type:"Transit",fee:"฿20 flat"},
+            {id:51,name:"BTS Bearing Park",address:"Sukhumvit 107, Samut Prakan",avail:134,total:320,lat:13.6600,lng:100.6000,type:"Transit",fee:"฿20 flat"},
+            {id:52,name:"BTS Bang Wa Lot",address:"Phet Kasem Rd, Phasi Charoen",avail:98,total:240,lat:13.7200,lng:100.4700,type:"Transit",fee:"฿20 flat"},
+            {id:53,name:"MRT Chatuchak Park",address:"Kamphaeng Phet 2 Rd",avail:156,total:400,lat:13.8000,lng:100.5500,type:"Transit",fee:"฿20 flat"},
+            {id:54,name:"MRT Phra Ram 9",address:"Rama IX Rd, Huai Khwang",avail:112,total:280,lat:13.7550,lng:100.5700,type:"Transit",fee:"฿25/hr"},
+            {id:55,name:"MRT Thailand Cultural Centre",address:"Ratchadaphisek Rd",avail:87,total:220,lat:13.7500,lng:100.5750,type:"Transit",fee:"฿25/hr"},
+            {id:56,name:"MRT Bang Sue Grand",address:"Bang Sue, Phahonyothin",avail:345,total:900,lat:13.8100,lng:100.5300,type:"Transit",fee:"฿20/hr"},
+            {id:57,name:"MRT Lak Song",address:"Phet Kasem Rd, Bang Khae",avail:123,total:300,lat:13.7100,lng:100.4400,type:"Transit",fee:"฿20 flat"},
+            {id:58,name:"Don Mueang Rail Station",address:"Vibhavadi Rangsit",avail:89,total:250,lat:13.9000,lng:100.5950,type:"Transit",fee:"฿20/hr"},
+            {id:59,name:"Bangkok Bus Terminal Ekkamai",address:"Sukhumvit 63, Khlong Tan Nua",avail:67,total:180,lat:13.7300,lng:100.5880,type:"Transit",fee:"฿25/hr"},
+            {id:60,name:"Bangkok Bus Terminal Mo Chit",address:"Kamphaeng Phet Rd",avail:145,total:450,lat:13.8050,lng:100.5520,type:"Transit",fee:"฿25/hr"},
+            {id:61,name:"Asok Montri Offices",address:"Sukhumvit 21, Khlong Toei",avail:45,total:300,lat:13.7380,lng:100.5610,type:"CBD",fee:"฿80/hr"},
+            {id:62,name:"Sathorn Square",address:"Sathorn Nua Rd, Bang Rak",avail:32,total:450,lat:13.7250,lng:100.5280,type:"CBD",fee:"฿100/hr"},
+            {id:63,name:"Empire Tower",address:"South Sathorn Rd, Yan Nawa",avail:78,total:520,lat:13.7180,lng:100.5300,type:"CBD",fee:"฿90/hr"},
+            {id:64,name:"Chamchuri Square",address:"Phayathai Rd, Pathum Wan",avail:56,total:350,lat:13.7380,lng:100.5300,type:"CBD",fee:"฿70/hr"},
+            {id:65,name:"MahaNakhon Cube",address:"Narathiwat Rd, Bang Rak",avail:28,total:180,lat:13.7220,lng:100.5280,type:"CBD",fee:"฿100/hr"},
+            {id:66,name:"King Power Mahanakhon",address:"Narathiwat Rd",avail:41,total:250,lat:13.7230,lng:100.5270,type:"CBD",fee:"฿80/hr"},
+            {id:67,name:"Ploenchit Center",address:"Ploenchit Rd, Pathum Wan",avail:34,total:220,lat:13.7430,lng:100.5450,type:"CBD",fee:"฿85/hr"},
+            {id:68,name:"Sukhumvit Square",address:"Sukhumvit Rd, Asoke",avail:52,total:310,lat:13.7370,lng:100.5600,type:"CBD",fee:"฿75/hr"},
+            {id:69,name:"Interchange 21",address:"Sukhumvit-Asoke",avail:47,total:280,lat:13.7360,lng:100.5590,type:"CBD",fee:"฿80/hr"},
+            {id:70,name:"GMM Grammy Place",address:"Sukhumvit 21, Asoke",avail:38,total:200,lat:13.7350,lng:100.5600,type:"CBD",fee:"฿70/hr"},
+            {id:71,name:"Chatuchak Market",address:"Kamphaeng Phet 2 Rd",avail:85,total:500,lat:13.8032,lng:100.5506,type:"Public",fee:"฿20 flat"},
+            {id:72,name:"Bangkok City Hall",address:"Dusit District",avail:205,total:400,lat:13.7667,lng:100.5116,type:"Public",fee:"฿20/hr"},
+            {id:73,name:"Lumpini Park East Lot",address:"Rama IV Rd, Pathum Wan",avail:205,total:400,lat:13.7300,lng:100.5400,type:"Public",fee:"฿30/hr"},
+            {id:74,name:"Rama VIII Park",address:"Bang Phlat / Bang Yi Khan",avail:310,total:600,lat:13.7750,lng:100.5000,type:"Public",fee:"฿20/hr"},
+            {id:75,name:"Khao San Road Area",address:"Rambuttri Rd, Phra Nakhon",avail:38,total:120,lat:13.7590,lng:100.4980,type:"Tourist",fee:"฿50/hr"},
+            {id:76,name:"Grand Palace Lot",address:"Na Phra Lan Rd, Phra Nakhon",avail:95,total:250,lat:13.7510,lng:100.4930,type:"Tourist",fee:"฿30/hr"},
+            {id:77,name:"Yaowarat/Chinatown",address:"Yaowarat Rd, Samphanthawong",avail:52,total:180,lat:13.7440,lng:100.5080,type:"Tourist",fee:"฿40/hr"},
+            {id:78,name:"Wat Arun Lot",address:"Arun Amarin Rd, Thon Buri",avail:45,total:150,lat:13.7430,lng:100.4850,type:"Tourist",fee:"฿30/hr"},
+            {id:79,name:"Wat Pho Area",address:"Sanam Chai Rd, Phra Nakhon",avail:32,total:100,lat:13.7460,lng:100.4920,type:"Tourist",fee:"฿30/hr"},
+            {id:80,name:"Wat Suthat/Giant Swing",address:"Bamrung Mueang Rd",avail:28,total:90,lat:13.7520,lng:100.5030,type:"Tourist",fee:"฿30/hr"},
+            {id:81,name:"Democracy Monument",address:"Ratchadamnoen Ave",avail:42,total:140,lat:13.7570,lng:100.5050,type:"Public",fee:"฿25/hr"},
+            {id:82,name:"Sanam Luang",address:"Phra Nakhon, Royal Field",avail:210,total:800,lat:13.7530,lng:100.4980,type:"Public",fee:"฿20/hr"},
+            {id:83,name:"Asiatique The Riverfront",address:"Charoen Krung Rd, Wat Phraya Krai",avail:165,total:700,lat:13.7150,lng:100.5100,type:"Tourist",fee:"Free 4hrs / ฿30/hr"},
+            {id:84,name:"River City Shopping",address:"Charoen Krung Rd, Talat Noi",avail:58,total:250,lat:13.7300,lng:100.5120,type:"Tourist",fee:"฿40/hr"},
+            {id:85,name:"Bangkok National Museum",address:"Na Phra That Rd, Phra Nakhon",avail:45,total:160,lat:13.7560,lng:100.4930,type:"Tourist",fee:"฿25/hr"},
+            {id:86,name:"Vimanmek Mansion",address:"Dusit Palace Park",avail:78,total:280,lat:13.7700,lng:100.5100,type:"Tourist",fee:"฿30/hr"},
+            {id:87,name:"Benjasiri Park",address:"Sukhumvit 22, Khlong Toei",avail:89,total:250,lat:13.7300,lng:100.5650,type:"Public",fee:"฿25/hr"},
+            {id:88,name:"Benjakitti Park",address:"Ratchadaphisek Rd, Khlong Toei",avail:156,total:450,lat:13.7250,lng:100.5550,type:"Public",fee:"฿25/hr"},
+            {id:89,name:"Suan Pakkad Palace",address:"Si Ayutthaya Rd, Phaya Thai",avail:34,total:120,lat:13.7550,lng:100.5250,type:"Tourist",fee:"฿30/hr"},
+            {id:90,name:"Erawan Museum",address:"Sukhumvit Rd, Samut Prakan",avail:98,total:350,lat:13.6200,lng:100.5900,type:"Tourist",fee:"฿30/hr"},
+            {id:91,name:"IMPACT Muang Thong",address:"Popular Rd, Pak Kret",avail:520,total:4000,lat:13.9000,lng:100.5500,type:"Public",fee:"฿20/hr"},
+            {id:92,name:"Thammasat Tha Phrachan",address:"Phra Nakhon, Bangkok",avail:145,total:600,lat:13.7570,lng:100.4950,type:"Public",fee:"฿20/hr"},
+            {id:93,name:"Chulalongkorn Univ",address:"Phayathai Rd, Pathum Wan",avail:230,total:900,lat:13.7380,lng:100.5300,type:"Public",fee:"฿25/hr"},
+            {id:94,name:"Kasetsart University",address:"Phahonyothin Rd, Chatuchak",avail:189,total:750,lat:13.8400,lng:100.5700,type:"Public",fee:"฿20/hr"},
+            {id:95,name:"Ramkhamhaeng Univ",address:"Ramkhamhaeng Rd, Bang Kapi",avail:167,total:650,lat:13.7500,lng:100.6500,type:"Public",fee:"฿20/hr"},
+            {id:96,name:"Rattanakosin Exhibition Hall",address:"Ratchadamnoen Klang",avail:38,total:130,lat:13.7530,lng:100.5080,type:"Tourist",fee:"฿30/hr"},
+            {id:97,name:"Queen Sirikit Convention",address:"Ratchadaphisek Rd",avail:345,total:1500,lat:13.7200,lng:100.5600,type:"Public",fee:"฿30/hr"},
+            {id:98,name:"Central Embassy",address:"Ploenchit Rd, Pathum Wan",avail:89,total:500,lat:13.7420,lng:100.5400,type:"Mall",fee:"฿60/hr"},
+            {id:99,name:"Iconsiam River Side",address:"Charoen Nakhon Rd",avail:134,total:600,lat:13.7230,lng:100.5090,type:"Mall",fee:"Free 3hrs"},
+            {id:100,name:"Bangkok Eye/River Park",address:"Charoen Krung Rd",avail:112,total:450,lat:13.7120,lng:100.5110,type:"Tourist",fee:"฿35/hr"}
+        ];
+
+        let filteredData = [...parkingData];
+        let currentFilter = 'all';
+        let map;
+        let markers = [];
+
+        function initMap() {
+            map = L.map('map').setView([13.755, 100.540], 11);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+            renderMarkers();
+        }
+
+        function getStatusColor(avail, total) {
+            const ratio = avail / total;
+            if (ratio > 0.3) return '#00B42A';
+            if (ratio > 0.1) return '#FF7D00';
+            return '#F53F3F';
+        }
+
+        function createCustomIcon(avail, total) {
+            const color = getStatusColor(avail, total);
+            return L.divIcon({
+                html: `<div class="custom-marker" style="background:${color}">${avail}</div>`,
+                className: '',
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+        }
+
+        function renderMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+            filteredData.forEach(place => {
+                const marker = L.marker([place.lat, place.lng], {
+                    icon: createCustomIcon(place.avail, place.total)
+                }).addTo(map);
+                marker.bindPopup(`
+                    <div class="p-1 min-w-[220px]">
+                        <h3 class="font-bold text-primary text-lg">${place.name}</h3>
+                        <p class="text-xs text-gray-500 my-2">${place.address}</p>
+                        <p class="text-sm font-semibold text-lg">
+                            <span style="color:${getStatusColor(place.avail, place.total)}; font-size:1.25rem">${place.avail}</span>
+                            <span class="text-gray-400"> / </span>${place.total} spots
+                        </p>
+                        <p class="text-xs text-gray-500 mt-2">${place.type} • ${place.fee}</p>
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}" 
+                           target="_blank" class="block mt-3 text-center bg-primary text-white py-2 rounded-lg">
+                            <i class="fa fa-directions"></i> Get Directions
+                        </a>
+                    </div>
+                `);
+                markers.push(marker);
+            });
+        }
+
+        function renderList() {
+            const container = document.getElementById('parkingList');
+            container.innerHTML = '';
+            filteredData.forEach(place => {
+                const pctUsed = Math.round(((place.total - place.avail) / place.total) * 100);
+                const colorClass = getStatusColor(place.avail, place.total) === '#00B42A' ? 'success' :
+                                  getStatusColor(place.avail, place.total) === '#FF7D00' ? 'warning' : 'danger';
+                container.innerHTML += `
+                    <div class="bg-white rounded-xl shadow-sm p-4 hover:shadow-md transition">
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="font-bold text-sm">${place.name}</h3>
+                            <span class="text-xs bg-gray-100 px-2 py-1 rounded-full whitespace-nowrap">${place.type}</span>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-2">${place.address}</p>
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="flex-1 bg-gray-100 rounded-full h-2">
+                                <div class="bg-${colorClass} h-2 rounded-full" style="width: ${pctUsed}%"></div>
+                            </div>
+                            <span class="font-bold text-${colorClass}">${place.avail}</span>
+                        </div>
+                        <p class="text-xs text-gray-600 mb-2">${place.avail}/${place.total} • ${place.fee}</p>
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}" 
+                           target="_blank" class="block text-center bg-primary/10 text-primary py-1.5 rounded text-sm font-medium">
+                            <i class="fa fa-external-link"></i> Navigate
+                        </a>
+                    </div>
+                `;
+            });
+        }
+
+        function updateStats() {
+            const avail = filteredData.reduce((s, p) => s + p.avail, 0);
+            const total = filteredData.reduce((s, p) => s + p.total, 0);
+            document.getElementById('totalAvailable').textContent = avail.toLocaleString();
+            document.getElementById('totalOccupied').textContent = (total - avail).toLocaleString();
+            document.getElementById('totalSpaces').textContent = total.toLocaleString();
+            document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+        }
+
+        function simulateLiveUpdate() {
+            parkingData.forEach(place => {
+                const change = Math.floor(Math.random() * 5) - 2;
+                place.avail = Math.max(0, Math.min(place.total, place.avail + change));
+            });
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            filteredData = parkingData.filter(p => {
+                const matchesSearch = q === '' || 
+                    p.name.toLowerCase().includes(q) || 
+                    p.address.toLowerCase().includes(q) || 
+                    p.type.toLowerCase().includes(q);
+                const matchesType = currentFilter === 'all' || p.type.includes(currentFilter);
+                return matchesSearch && matchesType;
+            });
+            renderMarkers();
+            renderList();
+            updateStats();
+        }
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                applyFilters();
+            });
+        });
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('active', 'text-primary', 'border-b-2', 'border-primary');
+                    b.classList.add('text-gray-500');
+                });
+                btn.classList.add('active', 'text-primary', 'border-b-2', 'border-primary');
+                btn.classList.remove('text-gray-500');
+                const view = btn.dataset.view;
+                document.getElementById('mapView').classList.toggle('hidden', view !== 'map');
+                document.getElementById('listView').classList.toggle('hidden', view !== 'list');
+                if (view === 'map') setTimeout(() => map.invalidateSize(), 100);
+            });
+        });
+
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('refreshBtn').addEventListener('click', simulateLiveUpdate);
+        setInterval(simulateLiveUpdate, 10000);
+
+        initMap();
+        applyFilters();
+    </script>
+</body>
+</html>
